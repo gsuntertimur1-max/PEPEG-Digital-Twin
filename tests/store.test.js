@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+const data = new Map();
+globalThis.localStorage = {getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};
+globalThis.window = { localStorage: globalThis.localStorage };
+const { useSimStore } = await import('../src/stores/simulationStore.js');
+const {claimSummary}=await import('../src/utils/simulation.js');
+test('Zustand actions update reservations, FEFO, claims, vehicle events and reset persisted mock state',()=>{
+  const store=useSimStore;store.getState().resetSimulation();
+  const n=store.getState().timeline.length;
+  store.getState().reserveStack('17/A01',400);
+  assert.equal(store.getState().stacks.find(s=>s.id==='17/A01').reserved,400);
+  assert.throws(()=>store.getState().reserveStack('17/A01',99999999));
+  store.getState().flagFefo('17/A01');assert.equal(store.getState().stacks.find(s=>s.id==='17/A01').fefo,'PRIORITAS KELUAR');
+  store.getState().advanceVehicle('IN-01');store.getState().advanceVehicle('IN-01');
+  const done=store.getState().timeline.length;store.getState().advanceVehicle('IN-01');assert.equal(store.getState().timeline.length,done);
+  store.getState().fulfillClaim('CLM-002',10);assert.equal(claimSummary(store.getState().claims[1]).remaining,15);
+  assert.equal(store.getState().timeline.length,n+5);
+  const saved=JSON.parse(data.get('pepeg-digital-twin-sim-v2'));assert.equal(saved.state.claims[1].fulfillments.length,2);
+  store.getState().resetSimulation();assert.equal(claimSummary(store.getState().claims[1]).remaining,25);assert.equal(store.getState().timeline.length,n);
+});
